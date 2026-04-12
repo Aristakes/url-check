@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>URL Checker</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 550px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            outline: none;
+            transition: all 0.2s;
+            font-family: monospace;
+        }
+        input:focus {
+            border-color: #3b82f6;
+        }
+        .status {
+            margin-top: 12px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .valid {
+            color: #10b981;
+        }
+        .invalid {
+            color: #ef4444;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 12px;
+            font-size: 14px;
+            border-left: 4px solid #cbd5e1;
+        }
+        .exists-true {
+            border-left-color: #10b981;
+        }
+        .exists-false {
+            border-left-color: #ef4444;
+        }
+        .checking {
+            border-left-color: #f59e0b;
+        }
+        hr {
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h3>🔗 URL-Check</h3>
+    <input type="text" id="urlInput" placeholder="https://example.com or example.com/page" autocomplete="off">
+    <div class="status" id="formatStatus"></div>
+    <div class="result" id="resultBlock">
+        <div id="existsInfo">—</div>
+        <div id="typeInfo" style="margin-top: 6px;"></div>
+    </div>
+</div>
+
+<script>
+    const urlInput = document.getElementById('urlInput');
+    const formatStatus = document.getElementById('formatStatus');
+    const resultBlock = document.getElementById('resultBlock');
+    const existsInfo = document.getElementById('existsInfo');
+    const typeInfo = document.getElementById('typeInfo');
+
+
+    const urlRegex = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
+
+    function isValidUrl(str) {
+        if (!str || str.trim() === '') return false;
+        return urlRegex.test(str.trim());
+    }
+
+    function normalizeUrl(raw) {
+        let trimmed = raw.trim();
+        if (!trimmed) return '';
+        if (!/^https?:\/\//i.test(trimmed)) {
+            return 'http://' + trimmed;
+        }
+        return trimmed;
+    }
+
+
+    async function mockServerCheck(fullUrl) {
+        const delay = Math.random() * 200 + 100;
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        const lowerUrl = fullUrl.toLowerCase();
+
+
+        let exists = true;
+        if (lowerUrl.includes('404') || lowerUrl.includes('notfound') || lowerUrl.includes('missing')) {
+            exists = false;
+        } else {
+
+            let hash = 0;
+            for (let i = 0; i < fullUrl.length; i++) {
+                hash = ((hash << 5) - hash) + fullUrl.charCodeAt(i);
+                hash |= 0;
+            }
+            exists = Math.abs(hash) % 10 < 8;
+        }
+
+
+        let type = 'folder';
+        const lastPart = fullUrl.split('/').pop();
+        if (/\.(html?|txt|js|css|json|xml|png|jpg|jpeg|gif|pdf|doc|zip)$/i.test(lastPart)) {
+            type = 'file';
+        } else if (fullUrl.endsWith('/')) {
+            type = 'folder';
+        } else if (exists && Math.abs(Math.random() * 100) < 30) {
+            type = 'file';
+        } else {
+            type = 'folder';
+        }
+
+        return { exists, type };
+    }
+
+    let debounceTimer = null;
+    let currentRequestId = 0;
+
+    async function performCheck(requestId, fullUrl) {
+        resultBlock.classList.remove('exists-true', 'exists-false', 'checking');
+        resultBlock.classList.add('checking');
+        existsInfo.innerHTML = '⏳ Check...';
+        typeInfo.innerHTML = '';
+
+        try {
+            const { exists, type } = await mockServerCheck(fullUrl);
+            if (currentRequestId !== requestId) return;
+
+            resultBlock.classList.remove('checking');
+            if (exists) {
+                resultBlock.classList.add('exists-true');
+                existsInfo.innerHTML = '✅ URL exist';
+                typeInfo.innerHTML = `📦 Type: ${type === 'file' ? 'File' : 'Folder'}`;
+            } else {
+                resultBlock.classList.add('exists-false');
+                existsInfo.innerHTML = '❌ URL not exist';
+                typeInfo.innerHTML = '';
+            }
+        } catch (err) {
+            if (currentRequestId !== requestId) return;
+            resultBlock.classList.remove('exists-true', 'exists-false', 'checking');
+            existsInfo.innerHTML = '⚠️ Error';
+            typeInfo.innerHTML = '';
+        }
+    }
+
+    function throttledCheck() {
+        const raw = urlInput.value;
+        const valid = isValidUrl(raw);
+
+
+        if (!raw.trim()) {
+            formatStatus.innerHTML = '';
+            formatStatus.className = 'status';
+        } else if (valid) {
+            formatStatus.innerHTML = '✅ URL is correct';
+            formatStatus.className = 'status valid';
+        } else {
+            formatStatus.innerHTML = '❌ URL is not correct';
+            formatStatus.className = 'status invalid';
+        }
+
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+            debounceTimer = null;
+        }
+
+        if (!valid || !raw.trim()) {
+            currentRequestId++;
+            resultBlock.classList.remove('exists-true', 'exists-false', 'checking');
+            existsInfo.innerHTML = '—';
+            typeInfo.innerHTML = '';
+            return;
+        }
+
+        resultBlock.classList.remove('exists-true', 'exists-false');
+        resultBlock.classList.add('checking');
+        existsInfo.innerHTML = '⏳ Wait...';
+        typeInfo.innerHTML = '';
+
+        debounceTimer = setTimeout(() => {
+            currentRequestId++;
+            const thisRequestId = currentRequestId;
+            const fullUrl = normalizeUrl(urlInput.value);
+            if (!isValidUrl(urlInput.value)) return;
+            performCheck(thisRequestId, fullUrl);
+            debounceTimer = null;
+        }, 350);
+    }
+
+    urlInput.addEventListener('input', throttledCheck);
+</script>
+</body>
+</html>
